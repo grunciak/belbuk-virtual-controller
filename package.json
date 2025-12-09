@@ -1,19 +1,19 @@
 {
   "name": "belbuk-virtual-controller",
-  "version": "1.0.0",
-  "description": "Virtual controller for Belbuk system",
+  "version": "2.0.0",
+  "description": "Virtual controller compatible with Belbuk Data Broker system",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@apollo/server": "^4.9.5",
-    "graphql": "^16.8.1",
-    "express": "^4.18.2",
+    "@apollo/server": "^4.10.0",
     "cors": "^2.8.5",
-    "uuid": "^9.0.1"
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
