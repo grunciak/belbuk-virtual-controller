@@ -1,11 +1,10 @@
-// server.js
-const express = require('express');
-const cors = require('cors');
-const { ApolloServer } = require('@apollo/server');
-const { expressMiddleware } = require('@apollo/server/express4');
-const bodyParser = require('body-parser');
-const { GraphQLScalarType, Kind } = require('graphql');
-const { v4: uuidv4 } = require('uuid');
+// server.js (ESM)
+import express from 'express';
+import cors from 'cors';
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@apollo/server/express4';
+import { GraphQLScalarType, Kind } from 'graphql';
+import { v4 as uuidv4 } from 'uuid';
 
 // ─────────────────────────────────────────────
 // Pomocnicze
@@ -20,7 +19,7 @@ let LAST_REFRESH_TOKEN = null;
 // Bufor zdarzeń
 let EVENTS_BUFFER = [];
 
-// Prosta konfiguracja – ważne, żeby typy były spójne z opisem w schema.json
+// Konfiguracja wirtualnego kontrolera
 const CONFIG = {
   inputs: [
     { id: 'IN1', name: 'Wejście drzwi głównych' },
@@ -30,26 +29,17 @@ const CONFIG = {
     { id: 'OUT1', name: 'Sygnalizator akustyczny' },
     { id: 'OUT2', name: 'Oświetlenie awaryjne' },
   ],
-  readers: [
-    { id: 'RD1', name: 'Czytnik wejściowy A' },
-  ],
-  zones: [
-    { id: 'Z1', name: 'Strefa biuro' },
-  ],
-  portals: [
-    { id: 'P1', name: 'Drzwi główne' },
-  ],
-  faults: [
-    { id: 'F1', name: 'Sabotaż', type: 'TAMPER' },
-  ],
+  readers: [{ id: 'RD1', name: 'Czytnik wejściowy A' }],
+  zones: [{ id: 'Z1', name: 'Strefa biuro' }],
+  portals: [{ id: 'P1', name: 'Drzwi główne' }],
+  faults: [{ id: 'F1', name: 'Sabotaż', type: 'TAMPER' }],
   eventTypes: [
     { code: 1000, symbol: 'DOOR_OPEN', desc: 'Drzwi otwarte' },
+    { code: 1001, symbol: 'DOOR_CLOSED', desc: 'Drzwi zamknięte' },
   ],
 };
 
-const ACCESS_LEVELS = [
-  { id: 1, name: 'Standard' },
-];
+const ACCESS_LEVELS = [{ id: 1, name: 'Standard' }];
 
 const USERS = [
   {
@@ -67,15 +57,26 @@ const SCHEDULES = [];
 const SPECIAL_DAYS = [];
 
 const POINTS = [
-  { id: 'PT1', name: 'Stan drzwi głównych', valueType: 'BOOLEAN', value: 'false' },
+  {
+    id: 'PT1',
+    name: 'Stan drzwi głównych',
+    valueType: 'BOOLEAN',
+    value: 'false',
+  },
 ];
 
 const GROUPS = [
-  { id: 'GRP1', name: 'Grupa czujników', leader: null, points: POINTS, groups: [] },
+  {
+    id: 'GRP1',
+    name: 'Grupa czujników',
+    leader: null,
+    points: POINTS,
+    groups: [],
+  },
 ];
 
 // ─────────────────────────────────────────────
-// Scalary „przezroczyste” (DateTime, PeriodTime, SpecialDate)
+// Scalary „przezroczyste”
 // ─────────────────────────────────────────────
 const passThroughScalar = (name) =>
   new GraphQLScalarType({
@@ -93,8 +94,7 @@ const passThroughScalar = (name) =>
   });
 
 // ─────────────────────────────────────────────
-// Uproszczony SDL – TYLKO to, czego potrzebuje createController
-// (dokładnie według schema.json, ale wycięte do niezbędnego minimum)
+// SDL – minimalny wycinek pełnej schemy
 // ─────────────────────────────────────────────
 const typeDefs = /* GraphQL */ `
   scalar DateTime
@@ -184,7 +184,7 @@ const typeDefs = /* GraphQL */ `
   }
 
   type AccessLevel {
-    id: Int!
+    id: ID!
     name: String!
   }
 
@@ -292,7 +292,7 @@ const typeDefs = /* GraphQL */ `
 `;
 
 // ─────────────────────────────────────────────
-// Pomocnicze – generowanie zdarzenia echo
+// Event helper
 // ─────────────────────────────────────────────
 function createEchoEvent() {
   const id = uuidv4();
@@ -302,7 +302,6 @@ function createEchoEvent() {
     template: 'Echo event from virtual controller',
   };
   const reason = POINTS[0] || null;
-
   return {
     site: SITE_ID,
     id,
@@ -429,12 +428,12 @@ const resolvers = {
 };
 
 // ─────────────────────────────────────────────
-// Start serwera na Railway
+// Start serwera
 // ─────────────────────────────────────────────
 async function start() {
   const app = express();
   app.use(cors());
-  app.use(bodyParser.json());
+  app.use(express.json());
 
   const server = new ApolloServer({
     typeDefs,
@@ -444,14 +443,13 @@ async function start() {
 
   await server.start();
 
-  // obsługujemy kilka ścieżek – żeby trafić w to, co woła createController
   const gqlMiddleware = expressMiddleware(server);
 
+  // obsługujemy kilka ścieżek
   app.post('/graphql', gqlMiddleware);
   app.post('/api/graphql.php', gqlMiddleware);
   app.post('/', gqlMiddleware);
 
-  // healthcheck
   app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
