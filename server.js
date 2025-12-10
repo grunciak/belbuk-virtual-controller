@@ -12,28 +12,21 @@ const GLOBAL_ID = process.env.GLOBAL_ID || `VC-${uuidv4().substring(0, 8).toUppe
 // ============================================================
 
 const typeDefs = `#graphql
-  enum ValueType {
-    STRING
-    INTEGER
-    FLOAT
-    BOOLEAN
-    BINARY
-  }
-
   type Point {
     id: String!
     name: String!
     type: String!
     family: String!
     created: String
-    valueType: ValueType!
     value: String!
   }
 
   type PointGroup {
     id: String!
     name: String!
+    leader: Point
     points: [Point!]!
+    groups: [PointGroup!]
   }
 
   type Resource {
@@ -43,99 +36,143 @@ const typeDefs = `#graphql
 
   type Input {
     id: Int!
-    localId: Int!
     name: String!
-    type: String!
   }
 
   type Output {
     id: Int!
-    localId: Int!
     name: String!
-    type: String!
   }
 
   type Reader {
     id: Int!
-    localId: Int!
     name: String!
-    type: String!
-    direction: String
+  }
+
+  type ZoneControl {
+    id: Int!
+    name: String!
+  }
+
+  type ZoneDetector {
+    input: Input!
+    entryTime: Int
+    exitTime: Int
+  }
+
+  type ZoneAlarm {
+    output: Output!
+    time: Int
   }
 
   type Zone {
     id: Int!
-    localId: Int!
     name: String!
+    controls: [ZoneControl!]
+    detectors: [ZoneDetector!]
+    alarms: [ZoneAlarm!]
   }
 
   type Portal {
     id: Int!
-    localId: Int!
     name: String!
-    entryZone: Zone
-    exitZone: Zone
-    readers: [Reader!]
+    entry: Reader
+    exit: Reader
+    button: Input
+    locking: Output
+    sensor: Input
+    release: Int
+    emergencies: [Output!]
   }
 
-  type FaultGroup {
+  type FaultInput {
     id: Int!
-    localId: Int!
     name: String!
   }
 
-  type EventType {
-    id: Int!
-    localId: Int!
-    name: String!
-    category: String
+  type Fault {
+    fault: String!
+    inputs: [FaultInput!]!
   }
 
-  type User {
-    id: Int!
-    localId: Int!
-    name: String!
-    firstName: String
-    lastName: String
-    cardNumber: String
+  type EventDef {
+    code: Int!
+    symbol: String!
+    desc: String!
+  }
+
+  type Credential {
+    card: String
     pin: String
-    active: Boolean!
   }
 
-  type Schedule {
-    id: Int!
-    localId: Int!
-    name: String!
+  type ZoneAuth {
+    zone: Zone!
+    scheduler: Schedule
+    arm: Boolean
+    disarm: Boolean
+    test: Boolean
+  }
+
+  type PortalAuth {
+    portal: Portal!
+    scheduler: Schedule
   }
 
   type AccessLevel {
     id: Int!
-    localId: Int!
     name: String!
+    zones: [ZoneAuth!]
+    portals: [PortalAuth!]
+  }
+
+  type User {
+    id: Int!
+    name: String!
+    credential: Credential
+    expire: String
+    restore: String
+    override: Boolean
+    access: [AccessLevel!]
+  }
+
+  type SchedulePeriod {
+    day: Int!
+    start: String!
+    end: String!
+  }
+
+  type Schedule {
+    id: Int!
+    name: String!
+    periods: [SchedulePeriod!]
+  }
+
+  type SpecialDay {
+    id: Int!
+    date: String!
+    day: Int!
   }
 
   type Authorization {
     users: [User!]!
     schedules: [Schedule!]!
     accessLevels: [AccessLevel!]!
+    specialDays: [SpecialDay!]!
   }
 
   type Configuration {
     globalControllerIdentifier: String!
+    site: String
     inputs: [Input!]!
     outputs: [Output!]!
     readers: [Reader!]!
     zones: [Zone!]!
     portals: [Portal!]!
-    faults: [FaultGroup!]!
-    eventTypes: [EventType!]!
+    faults: [Fault!]!
+    events: [EventDef!]!
     authorization: Authorization!
     resource: Resource!
-  }
-
-  type ControlResult {
-    result: Boolean!
-    message: String
   }
 
   type Query {
@@ -144,9 +181,9 @@ const typeDefs = `#graphql
   }
 
   type Mutation {
-    controlZone(zoneId: Int!, action: String!): ControlResult!
-    controlOutput(outputId: Int!, value: Boolean!): ControlResult!
-    setPointValue(pointId: String!, value: String!, valueType: ValueType!): Point
+    echoEvent: String!
+    setTokenTTL(ttl: Int!): String!
+    setSiteIdentifier(id: ID!): String!
   }
 `;
 
@@ -154,98 +191,159 @@ const typeDefs = `#graphql
 // SAMPLE DATA
 // ============================================================
 
-const data = {
-  points: [
-    { id: 'PT001', name: 'Temperatura - Hol główny', type: 'TEMPERATURE', family: 'SENSOR', valueType: 'FLOAT', value: '21.5', created: '2024-01-15T10:00:00Z' },
-    { id: 'PT002', name: 'Wilgotność - Hol główny', type: 'HUMIDITY', family: 'SENSOR', valueType: 'FLOAT', value: '45.2', created: '2024-01-15T10:00:00Z' },
-    { id: 'PT003', name: 'Czujnik ruchu - Wejście', type: 'MOTION', family: 'SENSOR', valueType: 'BOOLEAN', value: 'false', created: '2024-01-15T10:00:00Z' },
-    { id: 'PT004', name: 'Oświetlenie - Korytarz A', type: 'LIGHT', family: 'ACTUATOR', valueType: 'BOOLEAN', value: 'true', created: '2024-01-15T10:00:00Z' },
-    { id: 'PT005', name: 'Wentylacja - Sala 101', type: 'HVAC', family: 'ACTUATOR', valueType: 'INTEGER', value: '2', created: '2024-01-15T10:00:00Z' },
-  ],
-  
-  groups: [
-    { id: 'GRP001', name: 'Czujniki temperatury', points: [] },
-    { id: 'GRP002', name: 'Oświetlenie', points: [] },
-  ],
-  
-  inputs: [
-    { id: 1, localId: 1, name: 'Wejście 1 - Czujnik drzwi', type: 'DIGITAL' },
-    { id: 2, localId: 2, name: 'Wejście 2 - Czujnik okna', type: 'DIGITAL' },
-    { id: 3, localId: 3, name: 'Wejście 3 - PIR korytarz', type: 'DIGITAL' },
-  ],
-  
-  outputs: [
-    { id: 1, localId: 1, name: 'Wyjście 1 - Zamek drzwi główne', type: 'RELAY' },
-    { id: 2, localId: 2, name: 'Wyjście 2 - Zamek drzwi boczne', type: 'RELAY' },
-    { id: 3, localId: 3, name: 'Wyjście 3 - Syrena', type: 'RELAY' },
-  ],
-  
-  readers: [
-    { id: 1, localId: 1, name: 'Czytnik - Wejście główne', type: 'RFID', direction: 'ENTRY' },
-    { id: 2, localId: 2, name: 'Czytnik - Wejście główne (wyjście)', type: 'RFID', direction: 'EXIT' },
-    { id: 3, localId: 3, name: 'Czytnik - Drzwi boczne', type: 'RFID', direction: 'BOTH' },
-  ],
-  
-  zones: [
-    { id: 1, localId: 1, name: 'Strefa zewnętrzna' },
-    { id: 2, localId: 2, name: 'Hol główny' },
-    { id: 3, localId: 3, name: 'Biuro A' },
-    { id: 4, localId: 4, name: 'Biuro B' },
-    { id: 5, localId: 5, name: 'Serwerownia' },
-  ],
-  
-  portals: [
-    { id: 1, localId: 1, name: 'Wejście główne', entryZone: null, exitZone: null, readers: [] },
-    { id: 2, localId: 2, name: 'Drzwi boczne', entryZone: null, exitZone: null, readers: [] },
-    { id: 3, localId: 3, name: 'Drzwi do serwerowni', entryZone: null, exitZone: null, readers: [] },
-  ],
-  
-  faults: [
-    { id: 1, localId: 1, name: 'Awarie sprzętowe' },
-    { id: 2, localId: 2, name: 'Awarie komunikacji' },
-  ],
-  
-  eventTypes: [
-    { id: 1, localId: 1, name: 'Dostęp przyznany', category: 'ACCESS' },
-    { id: 2, localId: 2, name: 'Dostęp odmówiony', category: 'ACCESS' },
-    { id: 3, localId: 3, name: 'Alarm włamaniowy', category: 'ALARM' },
-    { id: 4, localId: 4, name: 'Drzwi otwarte zbyt długo', category: 'WARNING' },
-  ],
-  
-  users: [
-    { id: 1, localId: 1, name: 'Jan Kowalski', firstName: 'Jan', lastName: 'Kowalski', cardNumber: 'ABC123456', pin: '1234', active: true },
-    { id: 2, localId: 2, name: 'Anna Nowak', firstName: 'Anna', lastName: 'Nowak', cardNumber: 'DEF789012', pin: '5678', active: true },
-    { id: 3, localId: 3, name: 'Piotr Wiśniewski', firstName: 'Piotr', lastName: 'Wiśniewski', cardNumber: 'GHI345678', pin: '9012', active: false },
-  ],
-  
-  schedules: [
-    { id: 1, localId: 1, name: 'Godziny pracy (8-17)' },
-    { id: 2, localId: 2, name: 'Całodobowy' },
-    { id: 3, localId: 3, name: 'Weekendy' },
-  ],
-  
-  accessLevels: [
-    { id: 1, localId: 1, name: 'Pracownik' },
-    { id: 2, localId: 2, name: 'Kierownik' },
-    { id: 3, localId: 3, name: 'Administrator' },
-    { id: 4, localId: 4, name: 'Serwisant' },
-  ],
-};
+const inputs = [
+  { id: 1, name: 'Wejście 1 - Czujnik drzwi' },
+  { id: 2, name: 'Wejście 2 - Czujnik okna' },
+  { id: 3, name: 'Wejście 3 - PIR korytarz' },
+];
 
-// Link references
-data.portals[0].entryZone = data.zones[0];
-data.portals[0].exitZone = data.zones[1];
-data.portals[0].readers = [data.readers[0], data.readers[1]];
+const outputs = [
+  { id: 1, name: 'Wyjście 1 - Zamek drzwi główne' },
+  { id: 2, name: 'Wyjście 2 - Zamek drzwi boczne' },
+  { id: 3, name: 'Wyjście 3 - Syrena' },
+];
 
-data.portals[1].entryZone = data.zones[0];
-data.portals[1].exitZone = data.zones[1];
-data.portals[1].readers = [data.readers[2]];
+const readers = [
+  { id: 1, name: 'Czytnik - Wejście główne' },
+  { id: 2, name: 'Czytnik - Wejście główne (wyjście)' },
+  { id: 3, name: 'Czytnik - Drzwi boczne' },
+];
 
-data.portals[2].entryZone = data.zones[1];
-data.portals[2].exitZone = data.zones[4];
+const zones = [
+  { 
+    id: 1, 
+    name: 'Strefa zewnętrzna',
+    controls: [{ id: 1, name: 'Panel główny' }],
+    detectors: [{ input: inputs[0], entryTime: 30, exitTime: 30 }],
+    alarms: [{ output: outputs[2], time: 180 }]
+  },
+  { 
+    id: 2, 
+    name: 'Hol główny',
+    controls: [{ id: 2, name: 'Panel hol' }],
+    detectors: [{ input: inputs[2], entryTime: 15, exitTime: 15 }],
+    alarms: [{ output: outputs[2], time: 180 }]
+  },
+  { id: 3, name: 'Biuro A', controls: [], detectors: [], alarms: [] },
+  { id: 4, name: 'Biuro B', controls: [], detectors: [], alarms: [] },
+  { id: 5, name: 'Serwerownia', controls: [], detectors: [], alarms: [] },
+];
 
-data.groups[0].points = [data.points[0], data.points[1]];
-data.groups[1].points = [data.points[3]];
+const portals = [
+  { 
+    id: 1, 
+    name: 'Wejście główne',
+    entry: readers[0],
+    exit: readers[1],
+    button: inputs[0],
+    locking: outputs[0],
+    sensor: inputs[0],
+    release: 5,
+    emergencies: [outputs[0]]
+  },
+  { 
+    id: 2, 
+    name: 'Drzwi boczne',
+    entry: readers[2],
+    exit: null,
+    button: null,
+    locking: outputs[1],
+    sensor: inputs[1],
+    release: 5,
+    emergencies: []
+  },
+  { 
+    id: 3, 
+    name: 'Drzwi do serwerowni',
+    entry: null,
+    exit: null,
+    button: null,
+    locking: null,
+    sensor: null,
+    release: 3,
+    emergencies: []
+  },
+];
+
+const faults = [
+  { fault: 'POWER', inputs: [{ id: 1, name: 'Zasilanie główne' }] },
+  { fault: 'COMMUNICATION', inputs: [{ id: 2, name: 'Komunikacja' }] },
+];
+
+const events = [
+  { code: 1, symbol: 'ACCESS_GRANTED', desc: 'Dostęp przyznany' },
+  { code: 2, symbol: 'ACCESS_DENIED', desc: 'Dostęp odmówiony' },
+  { code: 3, symbol: 'ALARM', desc: 'Alarm włamaniowy' },
+  { code: 4, symbol: 'DOOR_HELD', desc: 'Drzwi otwarte zbyt długo' },
+];
+
+const schedules = [
+  { id: 1, name: 'Godziny pracy', periods: [
+    { day: 1, start: '08:00', end: '17:00' },
+    { day: 2, start: '08:00', end: '17:00' },
+    { day: 3, start: '08:00', end: '17:00' },
+    { day: 4, start: '08:00', end: '17:00' },
+    { day: 5, start: '08:00', end: '17:00' },
+  ]},
+  { id: 2, name: 'Całodobowy', periods: [
+    { day: 0, start: '00:00', end: '23:59' },
+    { day: 1, start: '00:00', end: '23:59' },
+    { day: 2, start: '00:00', end: '23:59' },
+    { day: 3, start: '00:00', end: '23:59' },
+    { day: 4, start: '00:00', end: '23:59' },
+    { day: 5, start: '00:00', end: '23:59' },
+    { day: 6, start: '00:00', end: '23:59' },
+  ]},
+];
+
+const accessLevels = [
+  { 
+    id: 1, 
+    name: 'Pracownik',
+    zones: [{ zone: zones[0], scheduler: schedules[0], arm: false, disarm: false, test: false }],
+    portals: [{ portal: portals[0], scheduler: schedules[0] }]
+  },
+  { 
+    id: 2, 
+    name: 'Administrator',
+    zones: zones.map(z => ({ zone: z, scheduler: schedules[1], arm: true, disarm: true, test: true })),
+    portals: portals.map(p => ({ portal: p, scheduler: schedules[1] }))
+  },
+];
+
+const users = [
+  { 
+    id: 1, 
+    name: 'Jan Kowalski', 
+    credential: { card: 'ABC123456', pin: '1234' },
+    expire: '2025-12-31',
+    restore: null,
+    override: false,
+    access: [accessLevels[0]]
+  },
+  { 
+    id: 2, 
+    name: 'Anna Nowak', 
+    credential: { card: 'DEF789012', pin: '5678' },
+    expire: '2025-12-31',
+    restore: null,
+    override: false,
+    access: [accessLevels[1]]
+  },
+];
+
+const points = [
+  { id: 'PT001', name: 'Temperatura - Hol główny', type: 'TEMPERATURE', family: 'SENSOR', value: '21.5', created: new Date().toISOString() },
+  { id: 'PT002', name: 'Wilgotność - Hol główny', type: 'HUMIDITY', family: 'SENSOR', value: '45.2', created: new Date().toISOString() },
+  { id: 'PT003', name: 'Czujnik ruchu - Wejście', type: 'MOTION', family: 'SENSOR', value: 'false', created: new Date().toISOString() },
+  { id: 'PT004', name: 'Oświetlenie - Korytarz A', type: 'LIGHT', family: 'ACTUATOR', value: 'true', created: new Date().toISOString() },
+  { id: 'PT005', name: 'Wentylacja - Sala 101', type: 'HVAC', family: 'ACTUATOR', value: '2', created: new Date().toISOString() },
+];
+
+const groups = [
+  { id: 'GRP001', name: 'Czujniki środowiskowe', leader: points[0], points: [points[0], points[1]], groups: [] },
+  { id: 'GRP002', name: 'Oświetlenie', leader: points[3], points: [points[3]], groups: [] },
+];
 
 // ============================================================
 // RESOLVERS
@@ -264,54 +362,42 @@ const resolvers = {
       console.log(`[${ts()}] Query: configuration`);
       return {
         globalControllerIdentifier: GLOBAL_ID,
-        inputs: data.inputs,
-        outputs: data.outputs,
-        readers: data.readers,
-        zones: data.zones,
-        portals: data.portals,
-        faults: data.faults,
-        eventTypes: data.eventTypes,
+        site: 'Virtual Site',
+        inputs,
+        outputs,
+        readers,
+        zones,
+        portals,
+        faults,
+        events,
         authorization: {
-          users: data.users,
-          schedules: data.schedules,
-          accessLevels: data.accessLevels,
+          users,
+          schedules,
+          accessLevels,
+          specialDays: [],
         },
         resource: {
-          points: data.points,
-          groups: data.groups,
+          points,
+          groups,
         },
       };
     },
   },
   
   Mutation: {
-    controlZone: (_, { zoneId, action }) => {
-      console.log(`[${ts()}] Mutation: controlZone (zoneId: ${zoneId}, action: ${action})`);
-      const zone = data.zones.find(z => z.id === zoneId);
-      if (zone) {
-        return { result: true, message: `Zone ${zone.name} - action ${action} executed` };
-      }
-      return { result: false, message: 'Zone not found' };
+    echoEvent: () => {
+      console.log(`[${ts()}] Mutation: echoEvent`);
+      return `Event echo - ${ts()}`;
     },
     
-    controlOutput: (_, { outputId, value }) => {
-      console.log(`[${ts()}] Mutation: controlOutput (outputId: ${outputId}, value: ${value})`);
-      const output = data.outputs.find(o => o.id === outputId);
-      if (output) {
-        return { result: true, message: `Output ${output.name} set to ${value}` };
-      }
-      return { result: false, message: 'Output not found' };
+    setTokenTTL: (_, { ttl }) => {
+      console.log(`[${ts()}] Mutation: setTokenTTL (ttl: ${ttl})`);
+      return `Token TTL set to ${ttl}`;
     },
     
-    setPointValue: (_, { pointId, value, valueType }) => {
-      console.log(`[${ts()}] Mutation: setPointValue (pointId: ${pointId}, value: ${value})`);
-      const point = data.points.find(p => p.id === pointId);
-      if (point) {
-        point.value = value;
-        point.valueType = valueType;
-        return point;
-      }
-      return null;
+    setSiteIdentifier: (_, { id }) => {
+      console.log(`[${ts()}] Mutation: setSiteIdentifier (id: ${id})`);
+      return `Site identifier set to ${id}`;
     },
   },
 };
@@ -325,7 +411,7 @@ async function start() {
   const server = new ApolloServer({ 
     typeDefs, 
     resolvers,
-    introspection: true,  // Enable for debugging
+    introspection: true,
   });
   
   await server.start();
@@ -346,36 +432,20 @@ async function start() {
   app.get('/', (req, res) => {
     res.json({
       name: 'Belbuk Virtual Controller',
-      version: '2.0.0',
+      version: '2.1.0',
       globalControllerIdentifier: GLOBAL_ID,
       endpoints: {
         graphql: '/graphql',
-        graphqlPhp: '/api/graphql.php',
         health: '/health'
-      },
-      exampleQuery: `query { configuration { globalControllerIdentifier zones { id name } resource { points { id name value } } } }`
+      }
     });
   });
   
   app.listen(PORT, () => {
-    console.log('');
-    console.log('═══════════════════════════════════════════════════════════════');
-    console.log('  BELBUK VIRTUAL CONTROLLER v2.0');
-    console.log('═══════════════════════════════════════════════════════════════');
-    console.log(`  Global ID:    ${GLOBAL_ID}`);
-    console.log(`  Port:         ${PORT}`);
-    console.log('');
-    console.log('  Endpoints:');
-    console.log(`    GraphQL:    http://localhost:${PORT}/graphql`);
-    console.log(`    PHP-style:  http://localhost:${PORT}/api/graphql.php`);
-    console.log(`    Health:     http://localhost:${PORT}/health`);
-    console.log('');
-    console.log('  Test query:');
-    console.log('    curl -X POST http://localhost:' + PORT + '/graphql \\');
-    console.log('      -H "Content-Type: application/json" \\');
-    console.log('      -d \'{"query": "{ configuration { globalControllerIdentifier zones { id name } } }"}\'');
-    console.log('═══════════════════════════════════════════════════════════════');
-    console.log('');
+    console.log(`[${ts()}] Virtual Controller started`);
+    console.log(`[${ts()}] Global ID: ${GLOBAL_ID}`);
+    console.log(`[${ts()}] Port: ${PORT}`);
+    console.log(`[${ts()}] GraphQL: http://localhost:${PORT}/graphql`);
   });
 }
 
