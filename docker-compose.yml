@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  virtual-controller:
+    build: .
+    container_name: belbuk-virtual-controller
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - JWT_SECRET=belbuk-virtual-controller-secret
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
