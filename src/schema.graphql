@@ -83,7 +83,7 @@ type AuthToken {
 # ==================== CONFIGURATION ====================
 
 type Configuration {
-  site: String
+  site: ID
   inputs: [Input!]!
   outputs: [Output!]!
   readers: [Reader!]!
@@ -94,24 +94,24 @@ type Configuration {
 }
 
 type Input {
-  id: Int!
+  id: ID!
   name: String!
 }
 
 type Output {
-  id: Int!
+  id: ID!
   name: String!
 }
 
 type Reader {
-  id: Int!
+  id: ID!
   name: String!
 }
 
 type Zone {
-  id: Int!
+  id: ID!
   name: String!
-  controls: [Input!]
+  controls: [Reader!]
   detectors: [Detector!]
   alarms: [Alarm!]
 }
@@ -128,7 +128,7 @@ type Alarm {
 }
 
 type Portal {
-  id: Int!
+  id: ID!
   name: String!
   entry: Reader
   exit: Reader
@@ -136,12 +136,19 @@ type Portal {
   locking: Output
   sensor: Input
   release: Int
-  emergencies: [Output!]
+  emergencies: [Input!]
 }
 
 type Fault {
-  fault: String
+  fault: FaultType
   inputs: [Input!]
+}
+
+enum FaultType {
+  TAMPER
+  PRIME_POWER_SUPPLY
+  ALTERNATIVE_POWER_SUPPLY
+  HARDWARE
 }
 
 type EventType {
