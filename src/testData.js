@@ -118,11 +118,7 @@ export const portals = [
   },
 ];
 
-export const faults = [
-  { fault: 'MAINS_FAILURE', inputs: [] },
-  { fault: 'BATTERY_LOW', inputs: [] },
-  { fault: 'TAMPER', inputs: [{ id: 1, name: 'Sabotaż centrali' }] },
-];
+export const faults = [];
 
 export const eventDefs = [
   { code: 100, symbol: 'ARM', desc: 'Uzbrojenie strefy' },
