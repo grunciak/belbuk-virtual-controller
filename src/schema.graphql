@@ -1,84 +1,147 @@
-# Schemat GraphQL zgodny z Belbuk
+# Schemat GraphQL wirtualnego sterownika Belbuk
+# Zgodny z zapytaniami: Configuration.graphql, Authorization.graphql, Mutation.graphql
 
 type Query {
-  echo: String!
+  # Autoryzacja
+  getAuthToken(login: String!, password: String!): AuthToken
+  refreshAuthToken: AuthToken
+  
+  # Konfiguracja
   configuration: Configuration
-  login(user: String!, password: String!): LoginResult
+  authorization: Authorization
+  resource(points: [ID!], groups: [ID!]): Resource
+  
+  # Zdarzenia
+  getUnconfirmedEvents: [ID!]
+  
+  # Inne
   tokenTTL: Int!
 }
 
 type Mutation {
-  controlZone(zoneId: Int!, override: ControlZoneResult, operatorId: Int!): ControlZoneResult
-  restoreZone(zoneId: Int!, operatorId: Int!): RestoreAlarmResult
-  testZone(zoneId: Int!, operatorId: Int!): TestZoneResult
-  blockZone(zoneId: Int!, operatorId: Int!): BlockZoneResult
-  blockZoneSensor(sensorId: Int!, operatorId: Int!): BlockZoneSensorResult
-  unblockZoneSensor(sensorId: Int!, operatorId: Int!): UnblockZoneSensorResult
-  releasePortal(portalId: Int!, operatorId: Int!): ReleasePortalResult
-  emergencyPortal(portalId: Int!, operatorId: Int!): EmergencyPortalResult
-  restorePortal(portalId: Int!, operatorId: Int!): RestorePortalResult
-  suspendAntipassback(operatorId: Int!): ManageAntipassbackResult
-  resumeAntipassback(operatorId: Int!): ManageAntipassbackResult
-  reactivateAntipassback(credential: String, operatorId: Int!): ReactivateAntipassbackResult
+  # System
+  echoEvent: String
+  setSiteIdentifier(id: ID!): Boolean
+  setTokenTTL(ttl: Int!): Boolean
+  
+  # Harmonogramy
+  createScheduler(input: [InputCreateScheduler!]!): [Scheduler!]
+  deleteScheduler(id: [Int!]!): Boolean
+  modifyScheduler(input: [InputModifyScheduler!]!): [Scheduler!]
+  
+  # Dni specjalne
+  createSpecialDay(input: [InputCreateSpecialDay!]!): [SpecialDay!]
+  modifySpecialDay(input: [InputModifySpecialDay!]!): [SpecialDay!]
+  deleteSpecialDay(id: [Int!]!): Boolean
+  
+  # Poziomy dostępu
+  createAccessLevel(input: [InputCreateAccessLevel!]!): [AccessLevel!]
+  modifyAccessLevel(input: [InputModifyAccessLevel!]!): [AccessLevel!]
+  deleteAccessLevel(id: [Int!]!): Boolean
+  
+  # Użytkownicy
+  createUser(input: [InputCreateUser!]!): [User!]
+  modifyUser(input: [InputModifyUser!]!): [User!]
+  deleteUser(id: [Int!]!): Boolean
+  
+  # Autoryzacja zbiorcza
+  updateAuthorization(input: InputUpdateAuthorization!): Authorization
+  
+  # Zdarzenia
+  confirmEvent(id: [ID!]!): [EventConfirmation!]
+  
+  # Sterowanie strefami
+  controlZone(zone: Int!, override: ControlZoneResult, operator: Int!): ControlZoneResult
+  restoreZone(zone: Int!, operator: Int!): RestoreAlarmResult
+  testZone(zone: Int!, operator: Int!): TestZoneResult
+  blockZone(zone: Int!, operator: Int!): BlockZoneResult
+  blockZoneSensor(sensor: Int!, operator: Int!): BlockZoneSensorResult
+  unblockZoneSensor(sensor: Int!, operator: Int!): UnblockZoneSensorResult
+  
+  # Sterowanie przejściami
+  releasePortal(portal: Int!, operator: Int!): ReleasePortalResult
+  emergencyPortal(portal: Int!, operator: Int!): EmergencyPortalResult
+  restorePortal(portal: Int!, operator: Int!): RestorePortalResult
+  
+  # Antypassback
+  suspendAntipassback(operator: Int!): ManageAntipassbackResult
+  resumeAntipassback(operator: Int!): ManageAntipassbackResult
+  reactivateAntipassback(credential: String, operator: Int!): ReactivateAntipassbackResult
 }
 
 type Subscription {
   events: Event
-  pointValueChange: PointValue
+}
+
+# ==================== AUTORYZACJA ====================
+
+type AuthToken {
+  mainToken: String
+  refreshToken: String
 }
 
 # ==================== CONFIGURATION ====================
 
 type Configuration {
-  globalControllerIdentifier: String
+  site: String
   inputs: [Input!]!
   outputs: [Output!]!
   readers: [Reader!]!
   zones: [Zone!]!
   portals: [Portal!]!
   faults: [Fault!]!
-  eventTypes: [EventType!]!
-  authorization: Authorization
-  resource: Resource
+  events: [EventType!]!
 }
 
 type Input {
-  id: Int
-  name: String
+  id: Int!
+  name: String!
 }
 
 type Output {
-  id: Int
-  name: String
+  id: Int!
+  name: String!
 }
 
 type Reader {
-  id: Int
-  name: String
+  id: Int!
+  name: String!
 }
 
 type Zone {
   id: Int!
-  name: String
-  content: String
+  name: String!
+  controls: [Input!]
+  detectors: [Detector!]
+  alarms: [Alarm!]
+}
+
+type Detector {
+  input: Input!
+  entryTime: Int
+  exitTime: Int
+}
+
+type Alarm {
+  output: Output!
+  time: Int
 }
 
 type Portal {
-  id: Int
-  name: String
-  content: String
+  id: Int!
+  name: String!
+  entry: Reader
+  exit: Reader
+  button: Input
+  locking: Output
+  sensor: Input
+  release: Int
+  emergencies: [Output!]
 }
 
 type Fault {
-  faultType: FaultType
-  inputs: [Input!]!
-}
-
-enum FaultType {
-  TAMPER
-  PRIME_POWER_SUPPLY
-  ALTERNATIVE_POWER_SUPPLY
-  HARDWARE
+  fault: String
+  inputs: [Input!]
 }
 
 type EventType {
@@ -90,70 +153,63 @@ type EventType {
 # ==================== AUTHORIZATION ====================
 
 type Authorization {
-  derogations: [SpecialDay!]!
   schedulers: [Scheduler!]!
-  accessLevels: [AccessLevel!]!
-  users: [ControllerUser!]!
-}
-
-type SpecialDay {
-  id: ID!
-  date: String!
-  day: DayOfWeek!
-}
-
-enum DayOfWeek {
-  MONDAY
-  TUESDAY
-  WEDNESDAY
-  THURSDAY
-  FRIDAY
-  SATURDAY
-  SUNDAY
-  CUSTOM_1
-  CUSTOM_2
+  derogations: [SpecialDay!]!
+  access: [AccessLevel!]!
+  users: [User!]!
 }
 
 type Scheduler {
-  id: ID!
+  id: Int!
   name: String!
   periods: [Period!]!
 }
 
 type Period {
-  day: DayOfWeek!
+  day: Int!
   start: String!
   end: String!
 }
 
-type AccessLevel {
-  id: ID!
-  name: String!
-  zoneAuths: [ZoneAuth!]
-  portalAuths: [PortalAuth!]
+type SpecialDay {
+  id: Int!
+  date: String!
+  day: Int!
 }
 
-type ZoneAuth {
-  zone: Zone
+type AccessLevel {
+  id: Int!
+  name: String!
+  zones: [ZoneAccess!]
+  portals: [PortalAccess!]
+}
+
+type ZoneAccess {
+  zone: Zone!
   scheduler: Scheduler
   arm: Boolean
   disarm: Boolean
   test: Boolean
 }
 
-type PortalAuth {
-  portal: Portal
+type PortalAccess {
+  portal: Portal!
   scheduler: Scheduler
 }
 
-type ControllerUser {
-  id: ID!
+type User {
+  id: Int!
   name: String!
-  credential: String!
+  credential: Credential
   expire: String
-  restore: Boolean!
-  override: Boolean!
-  accessLevelIds: [ID!]
+  restore: Boolean
+  override: Boolean
+  access: [AccessLevel!]
+}
+
+type Credential {
+  card: String
+  pin: String
 }
 
 # ==================== RESOURCE ====================
@@ -168,7 +224,12 @@ type Point {
   name: String!
   type: String
   family: String
-  valueType: String
+  created: String
+  value: PointValue
+}
+
+type PointValue {
+  type: String
   value: String
 }
 
@@ -177,19 +238,19 @@ type PointGroup {
   name: String!
   leader: Point
   points: [Point!]
-  childGroups: [PointGroup!]
+  groups: [PointGroup!]
 }
 
 # ==================== EVENTS ====================
 
 type Event {
   site: String!
-  id: String!
+  id: ID!
   dateTime: String!
   trigger: EventTrigger
   reason: Point
   points: [Point!]
-  extensions: [String!]
+  extensions: [EventExtension!]
   user: EventUser
   operator: Int
 }
@@ -199,26 +260,107 @@ type EventTrigger {
   template: String
 }
 
+type EventExtension {
+  id: String
+  type: String
+  value: String
+}
+
 type EventUser {
   id: Int
   name: String
 }
 
-type PointValue {
-  id: String!
-  name: String!
-  type: String
-  family: String
-  valueType: String
-  value: String
-  created: String
+type EventConfirmation {
+  id: ID!
+  status: String
 }
 
-# ==================== LOGIN ====================
+# ==================== INPUT TYPES ====================
 
-type LoginResult {
-  token: String
-  ttl: Int
+input InputCreateScheduler {
+  name: String!
+  periods: [InputPeriod!]!
+}
+
+input InputModifyScheduler {
+  id: Int!
+  name: String
+  periods: [InputPeriod!]
+}
+
+input InputPeriod {
+  day: Int!
+  start: String!
+  end: String!
+}
+
+input InputCreateSpecialDay {
+  date: String!
+  day: Int!
+}
+
+input InputModifySpecialDay {
+  id: Int!
+  date: String
+  day: Int
+}
+
+input InputCreateAccessLevel {
+  name: String!
+  zones: [InputZoneAccess!]
+  portals: [InputPortalAccess!]
+}
+
+input InputModifyAccessLevel {
+  id: Int!
+  name: String
+  zones: [InputZoneAccess!]
+  portals: [InputPortalAccess!]
+}
+
+input InputZoneAccess {
+  zone: Int!
+  scheduler: Int
+  arm: Boolean
+  disarm: Boolean
+  test: Boolean
+}
+
+input InputPortalAccess {
+  portal: Int!
+  scheduler: Int
+}
+
+input InputCreateUser {
+  name: String!
+  credential: InputCredential
+  expire: String
+  restore: Boolean
+  override: Boolean
+  access: [Int!]
+}
+
+input InputModifyUser {
+  id: Int!
+  name: String
+  credential: InputCredential
+  expire: String
+  restore: Boolean
+  override: Boolean
+  access: [Int!]
+}
+
+input InputCredential {
+  card: String
+  pin: String
+}
+
+input InputUpdateAuthorization {
+  schedulers: [InputModifyScheduler!]
+  derogations: [InputModifySpecialDay!]
+  access: [InputModifyAccessLevel!]
+  users: [InputModifyUser!]
 }
 
 # ==================== ENUMS ====================

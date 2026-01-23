@@ -15,9 +15,17 @@ import { PubSub } from 'graphql-subscriptions';
 
 import {
   configuration,
+  authorization,
+  resource,
   zones,
   portals,
-  GLOBAL_ID,
+  schedulers,
+  derogations,
+  accessLevels,
+  users,
+  points,
+  groups,
+  SITE_ID,
 } from './testData.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,13 +46,15 @@ const state = {
   portals: new Map(portals.map(p => [p.id, { emergency: false, released: false }])),
   antipassback: { suspended: false },
   eventIdCounter: 1,
+  unconfirmedEvents: [],
+  tokenTTL: TOKEN_TTL,
 };
 
 // ==================== FUNKCJE POMOCNICZE ====================
 
 function createEvent(code, symbol, reasonPoint, userId, operatorId) {
   const event = {
-    site: GLOBAL_ID,
+    site: SITE_ID,
     id: `EVT-${state.eventIdCounter++}`,
     dateTime: new Date().toISOString(),
     trigger: { type: code, template: symbol },
@@ -55,6 +65,7 @@ function createEvent(code, symbol, reasonPoint, userId, operatorId) {
     operator: operatorId,
   };
   
+  state.unconfirmedEvents.push(event.id);
   pubsub.publish('EVENTS', { events: event });
   console.log(`[EVENT] ${event.id}: ${symbol}`);
   return event;
@@ -64,24 +75,112 @@ function createEvent(code, symbol, reasonPoint, userId, operatorId) {
 
 const resolvers = {
   Query: {
-    echo: () => 'Virtual Controller ' + GLOBAL_ID,
-    configuration: () => configuration,
-    login: (_, { user, password }) => {
-      if (user === 'admin' && password === 'admin') {
-        const token = jwt.sign(
-          { sub: 'admin', role: 'admin', site: GLOBAL_ID },
+    // Autoryzacja
+    getAuthToken: (_, { login, password }) => {
+      if (login === 'admin' && password === 'admin') {
+        const mainToken = jwt.sign(
+          { sub: 'admin', role: 'admin', site: SITE_ID },
           JWT_SECRET,
-          { expiresIn: TOKEN_TTL }
+          { expiresIn: state.tokenTTL }
         );
-        return { token, ttl: TOKEN_TTL };
+        const refreshToken = jwt.sign(
+          { sub: 'admin', type: 'refresh' },
+          JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+        return { mainToken, refreshToken };
       }
       throw new Error('Invalid credentials');
     },
-    tokenTTL: () => TOKEN_TTL,
+    
+    refreshAuthToken: () => {
+      const mainToken = jwt.sign(
+        { sub: 'admin', role: 'admin', site: SITE_ID },
+        JWT_SECRET,
+        { expiresIn: state.tokenTTL }
+      );
+      const refreshToken = jwt.sign(
+        { sub: 'admin', type: 'refresh' },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+      return { mainToken, refreshToken };
+    },
+    
+    // Konfiguracja
+    configuration: () => configuration,
+    authorization: () => authorization,
+    resource: (_, { points: pointIds, groups: groupIds }) => {
+      let resultPoints = points;
+      let resultGroups = groups;
+      
+      if (pointIds && pointIds.length > 0) {
+        resultPoints = points.filter(p => pointIds.includes(p.id));
+      }
+      
+      if (groupIds && groupIds.length > 0) {
+        resultGroups = groups.filter(g => groupIds.includes(g.id));
+      }
+      
+      return { points: resultPoints, groups: resultGroups };
+    },
+    
+    // Zdarzenia
+    getUnconfirmedEvents: () => state.unconfirmedEvents,
+    
+    // Inne
+    tokenTTL: () => state.tokenTTL,
   },
 
   Mutation: {
-    controlZone: (_, { zoneId, override, operatorId }) => {
+    // System
+    echoEvent: () => {
+      createEvent(0, 'ECHO', null, null, null);
+      return 'Event published';
+    },
+    
+    setSiteIdentifier: (_, { id }) => {
+      console.log(`[CONFIG] Site identifier set to: ${id}`);
+      return true;
+    },
+    
+    setTokenTTL: (_, { ttl }) => {
+      state.tokenTTL = ttl;
+      console.log(`[CONFIG] Token TTL set to: ${ttl}s`);
+      return true;
+    },
+    
+    // Harmonogramy (stub)
+    createScheduler: (_, { input }) => input.map((s, i) => ({ id: 100 + i, ...s })),
+    deleteScheduler: () => true,
+    modifyScheduler: (_, { input }) => input.map(s => schedulers.find(sc => sc.id === s.id) || s),
+    
+    // Dni specjalne (stub)
+    createSpecialDay: (_, { input }) => input.map((s, i) => ({ id: 100 + i, ...s })),
+    modifySpecialDay: (_, { input }) => input,
+    deleteSpecialDay: () => true,
+    
+    // Poziomy dostępu (stub)
+    createAccessLevel: (_, { input }) => input.map((a, i) => ({ id: 100 + i, ...a, zones: [], portals: [] })),
+    modifyAccessLevel: (_, { input }) => input.map(a => accessLevels.find(al => al.id === a.id) || a),
+    deleteAccessLevel: () => true,
+    
+    // Użytkownicy (stub)
+    createUser: (_, { input }) => input.map((u, i) => ({ id: 100 + i, ...u, access: [] })),
+    modifyUser: (_, { input }) => input.map(u => users.find(us => us.id === u.id) || u),
+    deleteUser: () => true,
+    
+    // Autoryzacja zbiorcza
+    updateAuthorization: () => authorization,
+    
+    // Zdarzenia
+    confirmEvent: (_, { id }) => {
+      state.unconfirmedEvents = state.unconfirmedEvents.filter(e => !id.includes(e));
+      return id.map(i => ({ id: i, status: 'CONFIRMED' }));
+    },
+    
+    // Sterowanie strefami
+    controlZone: (_, { zone: zoneId, override, operator }) => {
       const zoneState = state.zones.get(zoneId);
       if (!zoneState) return 'UNKNOWN';
       
@@ -90,112 +189,108 @@ const resolvers = {
       if (zoneState.armed) {
         zoneState.armed = false;
         zoneState.alarm = false;
-        createEvent(101, 'DISARM', zoneDef, null, operatorId);
+        createEvent(101, 'DISARM', null, null, operator);
         return 'ZONE_DISARMED';
       } else {
         if (zoneState.blocked && !override) {
           return 'BLOCKED_SENSOR';
         }
         zoneState.armed = true;
-        createEvent(100, 'ARM', zoneDef, null, operatorId);
+        createEvent(100, 'ARM', null, null, operator);
         return 'ZONE_ARMED';
       }
     },
 
-    restoreZone: (_, { zoneId, operatorId }) => {
+    restoreZone: (_, { zone: zoneId, operator }) => {
       const zoneState = state.zones.get(zoneId);
       if (!zoneState) return 'UNKNOWN';
-      
       if (!zoneState.alarm) return 'ALARM_NOT_ACTIVE';
       
       zoneState.alarm = false;
-      createEvent(201, 'ALARM_RESTORE', null, null, operatorId);
+      createEvent(201, 'ALARM_RESTORE', null, null, operator);
       return 'RESTORED';
     },
 
-    testZone: (_, { zoneId, operatorId }) => {
+    testZone: (_, { zone: zoneId, operator }) => {
       const zoneState = state.zones.get(zoneId);
       if (!zoneState) return 'UNKNOWN';
-      
       if (zoneState.armed) return 'DISARM_REQUIRED';
       if (zoneState.testing) return 'ALREADY_STARTED';
       
       zoneState.testing = true;
-      createEvent(110, 'TEST_START', null, null, operatorId);
+      createEvent(110, 'TEST_START', null, null, operator);
       return 'STARTED';
     },
 
-    blockZone: (_, { zoneId, operatorId }) => {
+    blockZone: (_, { zone: zoneId, operator }) => {
       const zoneState = state.zones.get(zoneId);
       if (!zoneState) return 'UNKNOWN';
-      
       if (zoneState.armed) return 'DISARM_REQUIRED';
       if (zoneState.blocked) return 'ALREADY_BLOCKED';
       
       zoneState.blocked = true;
-      createEvent(120, 'ZONE_BLOCKED', null, null, operatorId);
+      createEvent(120, 'ZONE_BLOCKED', null, null, operator);
       return 'BLOCKED';
     },
 
-    blockZoneSensor: (_, { sensorId, operatorId }) => {
-      console.log(`[ZONE] Sensor ${sensorId} blocked by operator ${operatorId}`);
+    blockZoneSensor: (_, { sensor, operator }) => {
+      console.log(`[ZONE] Sensor ${sensor} blocked by operator ${operator}`);
       return 'BLOCKED';
     },
 
-    unblockZoneSensor: (_, { sensorId, operatorId }) => {
-      console.log(`[ZONE] Sensor ${sensorId} unblocked by operator ${operatorId}`);
+    unblockZoneSensor: (_, { sensor, operator }) => {
+      console.log(`[ZONE] Sensor ${sensor} unblocked by operator ${operator}`);
       return 'UNBLOCKED';
     },
 
-    releasePortal: (_, { portalId, operatorId }) => {
+    // Sterowanie przejściami
+    releasePortal: (_, { portal: portalId, operator }) => {
       const portalState = state.portals.get(portalId);
       if (!portalState) return 'UNKNOWN';
-      
       if (portalState.emergency) return 'EMERGENCY';
       
       portalState.released = true;
-      createEvent(310, 'PORTAL_RELEASED', null, null, operatorId);
+      createEvent(310, 'PORTAL_RELEASED', null, null, operator);
       
       setTimeout(() => { portalState.released = false; }, 5000);
       return 'RELEASED';
     },
 
-    emergencyPortal: (_, { portalId, operatorId }) => {
+    emergencyPortal: (_, { portal: portalId, operator }) => {
       const portalState = state.portals.get(portalId);
       if (!portalState) return 'UNKNOWN';
-      
       if (portalState.emergency) return 'ALREADY_EMERGENCY';
       
       portalState.emergency = true;
-      createEvent(311, 'PORTAL_EMERGENCY', null, null, operatorId);
+      createEvent(311, 'PORTAL_EMERGENCY', null, null, operator);
       return 'DONE';
     },
 
-    restorePortal: (_, { portalId, operatorId }) => {
+    restorePortal: (_, { portal: portalId, operator }) => {
       const portalState = state.portals.get(portalId);
       if (!portalState) return 'UNKNOWN';
-      
       if (!portalState.emergency) return 'NORMAL_OPERATION';
       
       portalState.emergency = false;
-      createEvent(312, 'PORTAL_RESTORED', null, null, operatorId);
+      createEvent(312, 'PORTAL_RESTORED', null, null, operator);
       return 'RESTORED';
     },
 
-    suspendAntipassback: (_, { operatorId }) => {
+    // Antypassback
+    suspendAntipassback: (_, { operator }) => {
       if (state.antipassback.suspended) return 'ALREADY_SUSPENDED';
       state.antipassback.suspended = true;
       return 'SUSPENDED';
     },
 
-    resumeAntipassback: (_, { operatorId }) => {
+    resumeAntipassback: (_, { operator }) => {
       if (!state.antipassback.suspended) return 'ALREADY_RESUMED';
       state.antipassback.suspended = false;
       return 'RESUMED';
     },
 
-    reactivateAntipassback: (_, { credential, operatorId }) => {
-      console.log(`[APB] Reactivated credential ${credential} by operator ${operatorId}`);
+    reactivateAntipassback: (_, { credential, operator }) => {
+      console.log(`[APB] Reactivated credential ${credential} by operator ${operator}`);
       return 'REACTIVATED';
     },
   },
@@ -203,9 +298,6 @@ const resolvers = {
   Subscription: {
     events: {
       subscribe: () => pubsub.asyncIterator(['EVENTS']),
-    },
-    pointValueChange: {
-      subscribe: () => pubsub.asyncIterator(['POINT_VALUE_CHANGE']),
     },
   },
 };
@@ -239,7 +331,7 @@ async function startServer() {
           };
         },
       },
-      // Logowanie zapytań configuration
+      // Logowanie zapytań
       {
         async requestDidStart(requestContext) {
           const query = requestContext.request.query || '';
@@ -251,9 +343,12 @@ async function startServer() {
             async willSendResponse(requestContext) {
               const query = requestContext.request.query || '';
               if (query.toLowerCase().includes('configuration')) {
-                const response = JSON.stringify(requestContext.response.body);
-                console.log('[BELBUK RESPONSE] Length:', response.length);
-                console.log('Response preview:', response.substring(0, 500));
+                const body = requestContext.response.body;
+                if (body.kind === 'single' && body.singleResult?.errors) {
+                  console.log('[BELBUK ERRORS]', JSON.stringify(body.singleResult.errors, null, 2));
+                } else {
+                  console.log('[BELBUK RESPONSE] OK');
+                }
               }
             },
           };
@@ -277,7 +372,7 @@ async function startServer() {
   );
 
   app.get('/health', (req, res) => {
-    res.json({ status: 'ok', globalId: GLOBAL_ID });
+    res.json({ status: 'ok', site: SITE_ID });
   });
 
   const port = PORT;
@@ -286,7 +381,7 @@ async function startServer() {
     console.log(`   GraphQL: http://localhost:${port}/graphql`);
     console.log(`   WebSocket: ws://localhost:${port}/graphql`);
     console.log(`   Health: http://localhost:${port}/health`);
-    console.log(`   Global ID: ${GLOBAL_ID}`);
+    console.log(`   Site: ${SITE_ID}`);
   });
 }
 
