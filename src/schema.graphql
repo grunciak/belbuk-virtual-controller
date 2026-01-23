@@ -1,0 +1,304 @@
+# Schemat GraphQL zgodny z Belbuk
+
+type Query {
+  echo: String!
+  configuration: Configuration
+  login(user: String!, password: String!): LoginResult
+  tokenTTL: Int!
+}
+
+type Mutation {
+  controlZone(zoneId: Int!, override: ControlZoneResult, operatorId: Int!): ControlZoneResult
+  restoreZone(zoneId: Int!, operatorId: Int!): RestoreAlarmResult
+  testZone(zoneId: Int!, operatorId: Int!): TestZoneResult
+  blockZone(zoneId: Int!, operatorId: Int!): BlockZoneResult
+  blockZoneSensor(sensorId: Int!, operatorId: Int!): BlockZoneSensorResult
+  unblockZoneSensor(sensorId: Int!, operatorId: Int!): UnblockZoneSensorResult
+  releasePortal(portalId: Int!, operatorId: Int!): ReleasePortalResult
+  emergencyPortal(portalId: Int!, operatorId: Int!): EmergencyPortalResult
+  restorePortal(portalId: Int!, operatorId: Int!): RestorePortalResult
+  suspendAntipassback(operatorId: Int!): ManageAntipassbackResult
+  resumeAntipassback(operatorId: Int!): ManageAntipassbackResult
+  reactivateAntipassback(credential: String, operatorId: Int!): ReactivateAntipassbackResult
+}
+
+type Subscription {
+  events: Event
+  pointValueChange: PointValue
+}
+
+# ==================== CONFIGURATION ====================
+
+type Configuration {
+  globalControllerIdentifier: String
+  inputs: [Input!]!
+  outputs: [Output!]!
+  readers: [Reader!]!
+  zones: [Zone!]!
+  portals: [Portal!]!
+  faults: [Fault!]!
+  eventTypes: [EventType!]!
+  authorization: Authorization
+  resource: Resource
+}
+
+type Input {
+  id: Int
+  name: String
+}
+
+type Output {
+  id: Int
+  name: String
+}
+
+type Reader {
+  id: Int
+  name: String
+}
+
+type Zone {
+  id: Int!
+  name: String
+  content: String
+}
+
+type Portal {
+  id: Int
+  name: String
+  content: String
+}
+
+type Fault {
+  faultType: FaultType
+  inputs: [Input!]!
+}
+
+enum FaultType {
+  TAMPER
+  PRIME_POWER_SUPPLY
+  ALTERNATIVE_POWER_SUPPLY
+  HARDWARE
+}
+
+type EventType {
+  code: Int!
+  symbol: String!
+  desc: String!
+}
+
+# ==================== AUTHORIZATION ====================
+
+type Authorization {
+  derogations: [SpecialDay!]!
+  schedulers: [Scheduler!]!
+  accessLevels: [AccessLevel!]!
+  users: [ControllerUser!]!
+}
+
+type SpecialDay {
+  id: ID!
+  date: String!
+  day: DayOfWeek!
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+  CUSTOM_1
+  CUSTOM_2
+}
+
+type Scheduler {
+  id: ID!
+  name: String!
+  periods: [Period!]!
+}
+
+type Period {
+  day: DayOfWeek!
+  start: String!
+  end: String!
+}
+
+type AccessLevel {
+  id: ID!
+  name: String!
+  zoneAuths: [ZoneAuth!]
+  portalAuths: [PortalAuth!]
+}
+
+type ZoneAuth {
+  zone: Zone
+  scheduler: Scheduler
+  arm: Boolean
+  disarm: Boolean
+  test: Boolean
+}
+
+type PortalAuth {
+  portal: Portal
+  scheduler: Scheduler
+}
+
+type ControllerUser {
+  id: ID!
+  name: String!
+  credential: String!
+  expire: String
+  restore: Boolean!
+  override: Boolean!
+  accessLevelIds: [ID!]
+}
+
+# ==================== RESOURCE ====================
+
+type Resource {
+  points: [Point!]
+  groups: [PointGroup!]
+}
+
+type Point {
+  id: String!
+  name: String!
+  type: String
+  family: String
+  valueType: String
+  value: String
+}
+
+type PointGroup {
+  id: String!
+  name: String!
+  leader: Point
+  points: [Point!]
+  childGroups: [PointGroup!]
+}
+
+# ==================== EVENTS ====================
+
+type Event {
+  site: String!
+  id: String!
+  dateTime: String!
+  trigger: EventTrigger
+  reason: Point
+  points: [Point!]
+  extensions: [String!]
+  user: EventUser
+  operator: Int
+}
+
+type EventTrigger {
+  type: Int!
+  template: String
+}
+
+type EventUser {
+  id: Int
+  name: String
+}
+
+type PointValue {
+  id: String!
+  name: String!
+  type: String
+  family: String
+  valueType: String
+  value: String
+  created: String
+}
+
+# ==================== LOGIN ====================
+
+type LoginResult {
+  token: String
+  ttl: Int
+}
+
+# ==================== ENUMS ====================
+
+enum ControlZoneResult {
+  BLOCKED_BACKUP
+  BLOCKED_FAULT
+  BLOCKED_MAINS
+  BLOCKED_SENSOR
+  BLOCKED_TAMPER
+  UNKNOWN
+  ZONE_ARMED
+  ZONE_DISARMED
+  ZONE_TEST_ENDED
+  ZONE_UNBLOCKED
+}
+
+enum RestoreAlarmResult {
+  UNKNOWN
+  RESTORED
+  STILL_ALARM_CONDITION
+  ALARM_NOT_ACTIVE
+}
+
+enum TestZoneResult {
+  UNKNOWN
+  STARTED
+  ALREADY_STARTED
+  DISARM_REQUIRED
+}
+
+enum BlockZoneResult {
+  UNKNOWN
+  BLOCKED
+  ALREADY_BLOCKED
+  DISARM_REQUIRED
+}
+
+enum BlockZoneSensorResult {
+  UNKNOWN
+  BLOCKED
+  ALREADY_BLOCKED
+  NOT_SENSOR
+}
+
+enum UnblockZoneSensorResult {
+  UNKNOWN
+  UNBLOCKED
+  ALREADY_UNBLOCKED
+  NOT_SENSOR
+}
+
+enum ReleasePortalResult {
+  UNKNOWN
+  RELEASED
+  EMERGENCY
+}
+
+enum EmergencyPortalResult {
+  UNKNOWN
+  DONE
+  ALREADY_EMERGENCY
+}
+
+enum RestorePortalResult {
+  UNKNOWN
+  RESTORED
+  STILL_EMERGENCY_CONDITION
+  NORMAL_OPERATION
+}
+
+enum ManageAntipassbackResult {
+  UNKNOWN
+  ALREADY_SUSPENDED
+  SUSPENDED
+  ALREADY_RESUMED
+  RESUMED
+}
+
+enum ReactivateAntipassbackResult {
+  UNKNOWN
+  REACTIVATED
+}
